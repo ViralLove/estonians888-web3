@@ -20,6 +20,7 @@ contract LoveDoPostNFT is ERC721, Ownable {
 
     Estonians888Token public immutable token; // Token used for superlikes
     uint256 public constant SUPERLIKE_LIMIT = 8; // Monthly superlike limit per user
+    uint256 public constant RECOMMENDATION_LIMIT = 8; // Maximum recommendations with superlikes per user
 
     struct Post {
         address author;       // Address of the post author
@@ -30,12 +31,13 @@ contract LoveDoPostNFT is ERC721, Ownable {
         address[] superlikes; // List of addresses that gave superlikes
     }
 
-    mapping(uint256 => Post) public posts;                // Posts by unique ID (also the NFT tokenId)
-    mapping(address => uint256) public userSuperlikeCount; // Monthly counter for superlikes given by each user
-    mapping(address => uint256) public lastSuperlikeReset; // Timestamp of the last reset of the user's superlike counter
-    mapping(address => uint256) public receivedSuperlikes; // Total superlikes received by each user
-    mapping(address => uint256) public givenSuperlikes;    // Total superlikes given by each user
-    mapping(address => uint256) public pendingWithdrawals; // Tracks tokens user can withdraw
+    mapping(uint256 => Post) public posts;                   // Posts by unique ID (also the NFT tokenId)
+    mapping(address => uint256) public userSuperlikeCount;    // Monthly counter for superlikes given by each user
+    mapping(address => uint256) public lastSuperlikeReset;    // Timestamp of the last reset of the user's superlike counter
+    mapping(address => uint256) public receivedSuperlikes;    // Total superlikes received by each user
+    mapping(address => uint256) public givenSuperlikes;       // Total superlikes given by each user
+    mapping(address => uint256) public recommendationCount;   // Tracks the number of superliked recommendations for each user
+    mapping(address => uint256) public pendingWithdrawals;    // Tracks tokens each user can withdraw
 
     uint256 public postCounter; // Counter for post IDs
 
@@ -54,6 +56,7 @@ contract LoveDoPostNFT is ERC721, Ownable {
 
     /**
      * @notice Creates a new post with a recommendation and mints a new NFT representing the post.
+     * Enforces that the recommended user has not exceeded the recommendation limit.
      * @param recommended Address of the person the post is about.
      * @param mediaURI URI for media content stored on IPFS.
      * @param content Formatted text of the post (markdown).
@@ -61,6 +64,9 @@ contract LoveDoPostNFT is ERC721, Ownable {
     function createPost(address recommended, string calldata mediaURI, string calldata content) external {
         require(recommended != address(0), "Recommended address cannot be zero.");
         
+        // Enforce the recommendation limit
+        require(recommendationCount[recommended] < RECOMMENDATION_LIMIT, "User has reached maximum recommendations.");
+
         uint256 postId = postCounter++;
         posts[postId] = Post({
             author: msg.sender,
@@ -77,8 +83,9 @@ contract LoveDoPostNFT is ERC721, Ownable {
     }
 
     /**
-     * @notice Gives a superlike to a post. Updates mappings for given and received superlikes
+     * @notice Gives a superlike to a post. Updates mappings for given and received superlikes,
      * and tracks the amount of tokens the recommended person can withdraw.
+     * If this is the first superlike for the post, increments the recommendation count for the user.
      * @param postId ID of the post to superlike.
      */
     function giveSuperlike(uint256 postId) external {
@@ -91,6 +98,11 @@ contract LoveDoPostNFT is ERC721, Ownable {
 
         // Ensure the user has not exceeded their monthly superlike limit
         require(userSuperlikeCount[msg.sender] < SUPERLIKE_LIMIT, "Monthly superlike limit reached.");
+
+        // If this is the first superlike for the post, increase recommendation count for the recommended user
+        if (post.superlikes.length == 0) {
+            recommendationCount[post.recommended]++;
+        }
 
         // Update post, user data, and superlike mappings
         post.superlikes.push(msg.sender);
