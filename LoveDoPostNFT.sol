@@ -11,7 +11,7 @@ import "./Estonians888Token.sol"; // Import the Estonians888Token contract
 
 /**
  * @title LoveDoPostNFT
- * @dev Contract for creating NFT posts, supporting superlikes, and tracking given and received superlikes per user.
+ * @dev Contract for creating NFT posts, supporting superlikes, and tracking given and received superlikes per user with DID.
  * Each post is represented as an NFT and linked to superlike functionality.
  */
 contract LoveDoPostNFT is ERC721, Ownable {
@@ -23,26 +23,27 @@ contract LoveDoPostNFT is ERC721, Ownable {
     uint256 public constant RECOMMENDATION_LIMIT = 8; // Maximum recommendations with superlikes per user
 
     struct Post {
-        address author;       // Address of the post author
-        address recommended;  // Address of the person the post is about
-        uint256 timestamp;    // Timestamp when the post was created
-        string mediaURI;      // URI for media content
-        string content;       // Formatted text (markdown)
-        address[] superlikes; // List of addresses that gave superlikes
+        address author;          // Address of the post author
+        string authorDID;        // DID of the author
+        string recommendedDID;   // DID of the recommended user
+        uint256 timestamp;       // Timestamp when the post was created
+        string mediaURI;         // URI for media content
+        string content;          // Formatted text (markdown)
+        string[] superlikeDIDs;  // List of DIDs that gave superlikes
     }
 
-    mapping(uint256 => Post) public posts;                   // Posts by unique ID (also the NFT tokenId)
-    mapping(address => uint256) public userSuperlikeCount;    // Monthly counter for superlikes given by each user
-    mapping(address => uint256) public lastSuperlikeReset;    // Timestamp of the last reset of the user's superlike counter
-    mapping(address => uint256) public receivedSuperlikes;    // Total superlikes received by each user
-    mapping(address => uint256) public givenSuperlikes;       // Total superlikes given by each user
-    mapping(address => uint256) public recommendationCount;   // Tracks the number of superliked recommendations for each user
-    mapping(address => uint256) public pendingWithdrawals;    // Tracks tokens each user can withdraw
+    mapping(uint256 => Post) public posts;                    // Posts by unique ID (also the NFT tokenId)
+    mapping(string => uint256) public userSuperlikeCount;     // Monthly counter for superlikes given by each DID
+    mapping(string => uint256) public lastSuperlikeReset;     // Timestamp of the last reset of the user's superlike counter
+    mapping(string => uint256) public receivedSuperlikes;     // Total superlikes received by each DID
+    mapping(string => uint256) public givenSuperlikes;        // Total superlikes given by each DID
+    mapping(string => uint256) public recommendationCount;    // Tracks the number of superliked recommendations for each DID
+    mapping(string => uint256) public pendingWithdrawals;     // Tracks tokens each user can withdraw by DID
 
     uint256 public postCounter; // Counter for post IDs
 
-    event PostCreated(uint256 indexed postId, address indexed author, address indexed recommended, uint256 timestamp, string mediaURI, string content);
-    event SuperlikeGiven(uint256 indexed postId, address indexed superlikeGiver, address indexed recommended, uint256 timestamp);
+    event PostCreated(uint256 indexed postId, address indexed author, string authorDID, string recommendedDID, uint256 timestamp, string mediaURI, string content);
+    event SuperlikeGiven(uint256 indexed postId, string indexed superlikeGiverDID, string indexed recommendedDID, uint256 timestamp);
     event WithdrawalRequested(address indexed user, uint256 amount);
 
     /**
@@ -57,75 +58,73 @@ contract LoveDoPostNFT is ERC721, Ownable {
     /**
      * @notice Creates a new post with a recommendation and mints a new NFT representing the post.
      * Enforces that the recommended user has not exceeded the recommendation limit.
-     * @param recommended Address of the person the post is about.
+     * @param authorDID DID of the author of the post.
+     * @param recommendedDID DID of the person the post is about.
      * @param mediaURI URI for media content stored on IPFS.
      * @param content Formatted text of the post (markdown).
      */
-    function createPost(address recommended, string calldata mediaURI, string calldata content) external {
-        require(recommended != address(0), "Recommended address cannot be zero.");
-        
-        // Enforce the recommendation limit
-        require(recommendationCount[recommended] < RECOMMENDATION_LIMIT, "User has reached maximum recommendations.");
+    function createPost(string calldata authorDID, string calldata recommendedDID, string calldata mediaURI, string calldata content) external {
+        require(bytes(recommendedDID).length > 0, "Recommended DID cannot be empty.");
+
+        require(recommendationCount[recommendedDID] < RECOMMENDATION_LIMIT, "User has reached maximum recommendations.");
 
         uint256 postId = postCounter++;
         posts[postId] = Post({
             author: msg.sender,
-            recommended: recommended,
+            authorDID: authorDID,
+            recommendedDID: recommendedDID,
             timestamp: block.timestamp,
             mediaURI: mediaURI,
             content: content,
-            superlikes: new address 
+            superlikeDIDs: new string   // Initialize an empty array of superlike DIDs
         });
 
         _mint(msg.sender, postId);
 
-        emit PostCreated(postId, msg.sender, recommended, block.timestamp, mediaURI, content);
+        emit PostCreated(postId, msg.sender, authorDID, recommendedDID, block.timestamp, mediaURI, content);
     }
 
     /**
-     * @notice Gives a superlike to a post. Updates mappings for given and received superlikes,
-     * and tracks the amount of tokens the recommended person can withdraw.
-     * If this is the first superlike for the post, increments the recommendation count for the user.
+     * @notice Gives a superlike to a post by DID.
      * @param postId ID of the post to superlike.
+     * @param giverDID DID of the user giving the superlike.
      */
-    function giveSuperlike(uint256 postId) external {
+    function giveSuperlike(uint256 postId, string calldata giverDID) external {
         require(_exists(postId), "Post does not exist.");
         Post storage post = posts[postId];
-        require(msg.sender != post.author, "Author cannot superlike own post.");
+        require(keccak256(bytes(giverDID)) != keccak256(bytes(post.authorDID)), "Author cannot superlike own post.");
 
-        // Check and reset superlike counter if the month has changed
-        _resetSuperlikeCount(msg.sender);
+        _resetSuperlikeCount(giverDID);
 
-        // Ensure the user has not exceeded their monthly superlike limit
-        require(userSuperlikeCount[msg.sender] < SUPERLIKE_LIMIT, "Monthly superlike limit reached.");
+        require(userSuperlikeCount[giverDID] < SUPERLIKE_LIMIT, "Monthly superlike limit reached.");
 
         // If this is the first superlike for the post, increase recommendation count for the recommended user
-        if (post.superlikes.length == 0) {
-            recommendationCount[post.recommended]++;
+        if (post.superlikeDIDs.length == 0) {
+            recommendationCount[post.recommendedDID]++;
         }
 
         // Update post, user data, and superlike mappings
-        post.superlikes.push(msg.sender);
-        userSuperlikeCount[msg.sender]++;
-        receivedSuperlikes[post.recommended]++;
-        givenSuperlikes[msg.sender]++;
+        post.superlikeDIDs.push(giverDID);
+        userSuperlikeCount[giverDID]++;
+        receivedSuperlikes[post.recommendedDID]++;
+        givenSuperlikes[giverDID]++;
 
         // Update pending withdrawal balance for the recommended user
-        pendingWithdrawals[post.recommended] += 1 ether; // Assumes 1 ether = 1 token with 18 decimals
+        pendingWithdrawals[post.recommendedDID] += 1 ether; // Assumes 1 ether = 1 token with 18 decimals
 
-        emit SuperlikeGiven(postId, msg.sender, post.recommended, block.timestamp);
+        emit SuperlikeGiven(postId, giverDID, post.recommendedDID, block.timestamp);
     }
 
     /**
      * @notice Allows users to withdraw tokens they have accumulated from received superlikes.
-     * Users pay gas fees to withdraw tokens. Ensures they can't withdraw more than their accumulated balance.
+     * Users pay gas fees to withdraw tokens. Ensures they can’t withdraw more than their accumulated balance.
      * @param amount The amount of tokens to withdraw (in smallest token units).
      */
-    function withdrawTokens(uint256 amount) external {
-        require(pendingWithdrawals[msg.sender] >= amount, "Insufficient balance to withdraw.");
+    function withdrawTokens(uint256 amount, string calldata userDID) external {
+        require(pendingWithdrawals[userDID] >= amount, "Insufficient balance to withdraw.");
 
         // Reduce the pending balance and transfer tokens
-        pendingWithdrawals[msg.sender] -= amount;
+        pendingWithdrawals[userDID] -= amount;
         token.transfer(msg.sender, amount);
 
         emit WithdrawalRequested(msg.sender, amount);
@@ -133,51 +132,51 @@ contract LoveDoPostNFT is ERC721, Ownable {
 
     /**
      * @dev Resets the monthly superlike counter for a user if a new month has started.
-     * @param user Address of the user.
+     * @param giverDID DID of the user.
      */
-    function _resetSuperlikeCount(address user) internal {
+    function _resetSuperlikeCount(string memory giverDID) internal {
         uint256 oneMonth = 30 days;
-        if (block.timestamp - lastSuperlikeReset[user] >= oneMonth) {
-            userSuperlikeCount[user] = 0;
-            lastSuperlikeReset[user] = block.timestamp;
+        if (block.timestamp - lastSuperlikeReset[giverDID] >= oneMonth) {
+            userSuperlikeCount[giverDID] = 0;
+            lastSuperlikeReset[giverDID] = block.timestamp;
         }
     }
 
     /**
-     * @notice Retrieves the list of addresses that gave superlikes to a post.
+     * @notice Retrieves the list of DIDs that gave superlikes to a post.
      * @param postId ID of the post to retrieve superlikes for.
-     * @return Addresses that gave superlikes.
+     * @return DIDs that gave superlikes.
      */
-    function getSuperlikes(uint256 postId) external view returns (address[] memory) {
+    function getSuperlikes(uint256 postId) external view returns (string[] memory) {
         require(_exists(postId), "Post does not exist.");
-        return posts[postId].superlikes;
+        return posts[postId].superlikeDIDs;
     }
 
     /**
-     * @notice Returns the total superlikes received by a specific user.
+     * @notice Returns the total superlikes received by a specific DID.
      * This can be used as a social mining metric for user rating.
-     * @param user Address of the user.
+     * @param userDID DID of the user.
      * @return Total superlikes received by the user.
      */
-    function getReceivedSuperlikes(address user) external view returns (uint256) {
-        return receivedSuperlikes[user];
+    function getReceivedSuperlikes(string memory userDID) external view returns (uint256) {
+        return receivedSuperlikes[userDID];
     }
 
     /**
-     * @notice Returns the total superlikes given by a specific user.
-     * @param user Address of the user.
+     * @notice Returns the total superlikes given by a specific DID.
+     * @param userDID DID of the user.
      * @return Total superlikes given by the user.
      */
-    function getGivenSuperlikes(address user) external view returns (uint256) {
-        return givenSuperlikes[user];
+    function getGivenSuperlikes(string memory userDID) external view returns (uint256) {
+        return givenSuperlikes[userDID];
     }
 
     /**
      * @notice Returns the amount of tokens the user can withdraw.
-     * @param user Address of the user.
+     * @param userDID DID of the user.
      * @return Amount of tokens available for withdrawal.
      */
-    function getPendingWithdrawals(address user) external view returns (uint256) {
-        return pendingWithdrawals[user];
+    function getPendingWithdrawals(string memory userDID) external view returns (uint256) {
+        return pendingWithdrawals[userDID];
     }
 }
