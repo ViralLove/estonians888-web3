@@ -122,13 +122,20 @@ contract LoveDoPostNFT is ERC721, Ownable {
      */
     function withdrawTokens(uint256 amount, string calldata userDID) external {
         require(pendingWithdrawals[userDID] >= amount, "Insufficient balance to withdraw.");
-
-        // Reduce the pending balance and transfer tokens
+    
+        // Reduce the pending balance before transferring
         pendingWithdrawals[userDID] -= amount;
-        token.transfer(msg.sender, amount);
-
-        emit WithdrawalRequested(msg.sender, amount);
+    
+        // Получаем адрес пользователя, связанный с DID
+        address userAddress = didToAddress[userDID];
+        require(userAddress != address(0), "DID not linked to any address");
+    
+        // Transfer tokens from the pool in the token contract to the user
+        token.transferFromPool(userAddress, amount);
+    
+        emit WithdrawalRequested(userAddress, amount);
     }
+
 
     /**
      * @dev Resets the monthly superlike counter for a user if a new month has started.
