@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.18;
+pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -33,6 +33,7 @@ contract LoveDoPostNFT is ERC721, Ownable {
     }
 
     mapping(uint256 => Post) public posts;                    // Posts by unique ID (also the NFT tokenId)
+    mapping(string => address) public didToAddress;           // Mapping for DID to address association
     mapping(string => uint256) public userSuperlikeCount;     // Monthly counter for superlikes given by each DID
     mapping(string => uint256) public lastSuperlikeReset;     // Timestamp of the last reset of the user's superlike counter
     mapping(string => uint256) public receivedSuperlikes;     // Total superlikes received by each DID
@@ -50,9 +51,21 @@ contract LoveDoPostNFT is ERC721, Ownable {
      * @dev Initializes the ERC721 with a name and symbol, and sets the token for superlikes.
      * @param _token Address of the Estonians888Token contract.
      */
-    constructor(Estonians888Token _token) ERC721("LoveDoPostNFT", "LDP") {
+    constructor(Estonians888Token _token) ERC721("LoveDoPostNFT", "LDP") Ownable(msg.sender) {
         require(address(_token).code.length > 0, "Token address must be a contract.");
         token = _token;
+    }
+
+    /**
+     * @notice Sets the address associated with a given DID.
+     * @dev This function links a DID to an Ethereum address.
+     * @param did The DID of the user.
+     * @param userAddress The Ethereum address to associate with the DID.
+     */
+    function setDIDAddress(string calldata did, address userAddress) private {
+        require(userAddress != address(0), "Invalid address");
+        // Adding the ability to link DID to an address
+        didToAddress[did] = userAddress;
     }
 
     /**
@@ -76,10 +89,12 @@ contract LoveDoPostNFT is ERC721, Ownable {
             timestamp: block.timestamp,
             mediaURI: mediaURI,
             content: content,
-            superlikeDIDs: new string   // Initialize an empty array of superlike DIDs
+            superlikeDIDs: new string[](0)   // Initialize an empty array of superlike DIDs
         });
 
         _mint(msg.sender, postId);
+
+        setDIDAddress(authorDID, msg.sender);
 
         emit PostCreated(postId, msg.sender, authorDID, recommendedDID, block.timestamp, mediaURI, content);
     }
@@ -108,6 +123,8 @@ contract LoveDoPostNFT is ERC721, Ownable {
         userSuperlikeCount[giverDID]++;
         receivedSuperlikes[post.recommendedDID]++;
         givenSuperlikes[giverDID]++;
+
+        setDIDAddress(giverDID, msg.sender);
 
         // Update pending withdrawal balance for the recommended user
         pendingWithdrawals[post.recommendedDID] += 1 ether; // Assumes 1 ether = 1 token with 18 decimals
@@ -186,4 +203,13 @@ contract LoveDoPostNFT is ERC721, Ownable {
     function getPendingWithdrawals(string memory userDID) external view returns (uint256) {
         return pendingWithdrawals[userDID];
     }
+
+    /**
+    * @dev Returns whether `tokenId` exists.
+    * Tokens exist if they have an owner.
+    */
+    function _exists(uint256 tokenId) internal view returns (bool) {
+        return (ownerOf(tokenId) != address(0));
+    }
+
 }

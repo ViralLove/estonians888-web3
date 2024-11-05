@@ -10,7 +10,7 @@ module.exports = {
     },
     compilers: {
       solc: {
-        version: "0.8.22",     // Версия компилятора Solidity
+        version: "0.8.20",     // Версия компилятора Solidity
       },
     },
   };
