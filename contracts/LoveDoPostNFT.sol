@@ -6,6 +6,10 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/token/common/ERC2981.sol";     // For royalty support
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol"; // For reentrancy protection
+import "@openzeppelin/contracts/utils/Multicall.sol";          // For multicall functionality
+
 
 import "./Estonians888Token.sol"; // Import the Estonians888Token contract
 
@@ -14,11 +18,14 @@ import "./Estonians888Token.sol"; // Import the Estonians888Token contract
  * @dev Contract for creating NFT posts, supporting superlikes, and tracking given and received superlikes per user with DID.
  * Each post is represented as an NFT and linked to superlike functionality.
  */
-contract LoveDoPostNFT is ERC721, Ownable {
+contract LoveDoPostNFT is ERC721, Ownable, ERC2981, ReentrancyGuard, Multicall {
+
     using SafeERC20 for IERC20;
     using Address for address;
 
     Estonians888Token public immutable token; // Token used for superlikes
+    IEstonians888DIDRegistry public profileContract;
+
     uint256 public constant SUPERLIKE_LIMIT = 8; // Monthly superlike limit per user
     uint256 public constant RECOMMENDATION_LIMIT = 8; // Maximum recommendations with superlikes per user
 
@@ -29,11 +36,14 @@ contract LoveDoPostNFT is ERC721, Ownable {
         uint256 timestamp;       // Timestamp when the post was created
         string mediaURI;         // URI for media content
         string content;          // Formatted text (markdown)
+        string[] tags;           // An array of service/product descriptive (hash)tags
+        bool isActive;           // The active status of the post
         string[] superlikeDIDs;  // List of DIDs that gave superlikes
     }
 
     mapping(uint256 => Post) public posts;                    // Posts by unique ID (also the NFT tokenId)
     mapping(string => address) public didToAddress;           // Mapping for DID to address association
+    mapping(string => uint256[]) public recommendedToPosts;   // Mapping recommendedDID (value provider) to all (+other) LoveDo posts about it
     mapping(string => uint256) public userSuperlikeCount;     // Monthly counter for superlikes given by each DID
     mapping(string => uint256) public lastSuperlikeReset;     // Timestamp of the last reset of the user's superlike counter
     mapping(string => uint256) public receivedSuperlikes;     // Total superlikes received by each DID
@@ -47,13 +57,28 @@ contract LoveDoPostNFT is ERC721, Ownable {
     event SuperlikeGiven(uint256 indexed postId, string indexed superlikeGiverDID, string indexed recommendedDID, uint256 timestamp);
     event WithdrawalRequested(address indexed user, uint256 amount);
 
+    mapping(string => uint256[]) public tagToPosts; // Mapping of tags to post IDs for tag-based grouping
+    mapping(uint256 => uint256) public postInteractions; // Counts interactions for each post
+    mapping(uint256 => address[]) public postViewers;    // Stores unique viewers for each post
+    mapping(uint256 => Transaction[]) public postTransactions; // Transaction history for each post
+    mapping(string => uint256) public postEarnings;      // Tracks earnings for each DID
+
+    struct Transaction {          // Structure to store transaction data
+        uint256 timestamp;
+        uint256 amount;
+        address user;
+    }
+
+
     /**
      * @dev Initializes the ERC721 with a name and symbol, and sets the token for superlikes.
      * @param _token Address of the Estonians888Token contract.
      */
-    constructor(Estonians888Token _token) ERC721("LoveDoPostNFT", "LDP") Ownable(msg.sender) {
+    constructor(Estonians888Token _token, address _profileContract) ERC721("LoveDoPostNFT", "LDP") Ownable(msg.sender) {
         require(address(_token).code.length > 0, "Token address must be a contract.");
         token = _token;
+        profileContract = IEstonians888DIDRegistry(_profileContract);
+        _setDefaultRoyalty(msg.sender, 888); // Sets default royalty to 8.88%
     }
 
     /**
@@ -76,7 +101,7 @@ contract LoveDoPostNFT is ERC721, Ownable {
      * @param mediaURI URI for media content stored on IPFS.
      * @param content Formatted text of the post (markdown).
      */
-    function createPost(string calldata authorDID, string calldata recommendedDID, string calldata mediaURI, string calldata content) external {
+    function createPost(string calldata authorDID, string calldata recommendedDID, string calldata mediaURI, string calldata content, string[] calldata tags) external {
         require(bytes(recommendedDID).length > 0, "Recommended DID cannot be empty.");
 
         require(recommendationCount[recommendedDID] < RECOMMENDATION_LIMIT, "User has reached maximum recommendations.");
@@ -89,8 +114,15 @@ contract LoveDoPostNFT is ERC721, Ownable {
             timestamp: block.timestamp,
             mediaURI: mediaURI,
             content: content,
+            tags: tags, // Initialize an empty array for tags
+            isActive: true,       // Set initial status to active
             superlikeDIDs: new string[](0)   // Initialize an empty array of superlike DIDs
         });
+
+        for (uint256 i = 0; i < tags.length; i++) {
+            tagToPosts[tags[i]].push(postId);
+        }
+
 
         _mint(msg.sender, postId);
 
@@ -137,7 +169,7 @@ contract LoveDoPostNFT is ERC721, Ownable {
      * Users pay gas fees to withdraw tokens. Ensures they can’t withdraw more than their accumulated balance.
      * @param amount The amount of tokens to withdraw (in smallest token units).
      */
-    function withdrawTokens(uint256 amount, string calldata userDID) external {
+    function withdrawTokens(uint256 amount, string calldata userDID) external nonReentrant {
         require(pendingWithdrawals[userDID] >= amount, "Insufficient balance to withdraw.");
     
         // Reduce the pending balance before transferring
