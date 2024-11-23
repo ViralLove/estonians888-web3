@@ -38,7 +38,7 @@ contract Estonians888DIDRegistry is Ownable {
     event KYCStatusUpdated(string indexed did, bool status);
 
     // Event emitted when social proof is linked to a DID
-    event SocialProofLinked(string indexed did, bytes32 platform, string alias, bool verified);
+    event SocialProofLinked(string indexed did, bytes32 platform, string username, bool verified);
 
     // Event emitted when a LegalNFT is linked to a DID
     event LegalNFTLinked(string indexed did, uint256 legalNFTTokenId);
@@ -77,10 +77,10 @@ contract Estonians888DIDRegistry is Ownable {
      * @dev Links a social profile alias to a specified DID with a platform code.
      * @param did The DID string to link social proof for.
      * @param platform The code of the social platform (e.g., PLATFORM_X for X).
-     * @param alias The alias or username on the social platform.
+     * @param username The alias or username on the social platform.
      * @param verified The verification status on the platform (true if verified).
      */
-    function linkSocialProof(string memory did, bytes32 platform, string memory alias, bool verified) external onlyOwner {
+    function linkSocialProof(string memory did, bytes32 platform, string memory username, bool verified) external onlyOwner {
         require(bytes(did).length > 0, "DID is not registered.");
         require(
             platform == PLATFORM_X || platform == PLATFORM_INSTAGRAM ||
@@ -91,10 +91,10 @@ contract Estonians888DIDRegistry is Ownable {
         );
 
         DIDAttributes storage attributes = didAttributesStorage[did];
-        attributes.socialProfiles[platform] = alias;
+        attributes.socialProfiles[platform] = username;
         attributes.socialVerified = verified;
 
-        emit SocialProofLinked(did, platform, alias, verified);
+        emit SocialProofLinked(did, platform, username, verified);
     }
 
     /**

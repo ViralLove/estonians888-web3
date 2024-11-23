@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.18;
 
+import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
 /**
@@ -8,9 +9,9 @@ import "@openzeppelin/contracts/access/Ownable.sol";
  * @dev This contract manages the registration and verification of Decentralized Identifiers (DIDs) for users.
  * It stores associations between DIDs and user attributes such as KYC status, social proof, and LegalNFT.
  */
-contract Estonians888DIDRegistry is Ownable {
+contract Estonians888DIDRegistry is ERC721, Ownable {
     
-    constructor() Ownable(msg.sender) {}
+    constructor() ERC721("Estonians888LegalNFT", "E888LEGAL") {}
 
     struct DIDAttributes {
         bool kycVerified;

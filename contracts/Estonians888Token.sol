@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.18;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
@@ -18,7 +18,7 @@ contract Estonians888Token is ERC20, Ownable {
      * @dev Constructor initializes the token with the name "Estonians888" and symbol "ESTO",
      * allocating the initial supply to the contract itself for controlled issuance.
      */
-    constructor() ERC20("Estonians888", "ESTO") Ownable(msg.sender){
+    constructor() ERC20("Estonians888", "ESTO") {
         remainingPool = INITIAL_SUPPLY;
 
         // Initial supply allocated to the contract for controlled issuance

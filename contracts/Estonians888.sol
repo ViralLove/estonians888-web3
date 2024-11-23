@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.18;
 
 import "@openzeppelin/contracts/token/common/ERC2981.sol";
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
@@ -26,11 +26,9 @@ contract Estonians888 is ERC721, ERC721Enumerable, ERC721URIStorage, ERC2981, Ow
     /**
      * @dev Sets up the collection name, symbol, royalty information, and owner of the contract.
      * @param _royaltyFeesInBips Royalty fee in basis points (1% = 100 basis points).
-     * @param _owner Address of the contract owner.
      */
-    constructor(uint96 _royaltyFeesInBips, address _owner) ERC721("Estonians888", "EST888") Ownable(_owner) {
-        setRoyaltyInfo(_owner, _royaltyFeesInBips);
-        transferOwnership(_owner);
+    constructor(uint96 _royaltyFeesInBips) ERC721("Estonians888", "EST888") {
+        _setDefaultRoyalty(msg.sender, _royaltyFeesInBips);
     }
 
     /**
@@ -58,19 +56,17 @@ contract Estonians888 is ERC721, ERC721Enumerable, ERC721URIStorage, ERC2981, Ow
 
     // Overridden functions from inherited contracts.
 
-    function _update(address to, uint256 tokenId, address auth)
-        internal
-        override(ERC721, ERC721Enumerable)
-        returns (address)
-    {
-        return super._update(to, tokenId, auth);
+    function _beforeTokenTransfer(
+        address from,
+        address to,
+        uint256 firstTokenId,
+        uint256 batchSize
+    ) internal virtual override(ERC721, ERC721Enumerable) {
+        super._beforeTokenTransfer(from, to, firstTokenId, batchSize);
     }
 
-    function _increaseBalance(address account, uint128 value)
-        internal
-        override(ERC721, ERC721Enumerable)
-    {
-        super._increaseBalance(account, value);
+    function _burn(uint256 tokenId) internal override(ERC721, ERC721URIStorage) {
+        super._burn(tokenId);
     }
 
     function tokenURI(uint256 tokenId)
@@ -85,7 +81,7 @@ contract Estonians888 is ERC721, ERC721Enumerable, ERC721URIStorage, ERC2981, Ow
     function supportsInterface(bytes4 interfaceId)
         public
         view
-        override(ERC2981, ERC721Enumerable, ERC721URIStorage, ERC721)
+        override(ERC721, ERC721Enumerable, ERC721URIStorage, ERC2981)
         returns (bool)
     {
         return super.supportsInterface(interfaceId);

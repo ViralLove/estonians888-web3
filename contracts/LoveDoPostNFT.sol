@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.18;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -7,11 +7,11 @@ import "@openzeppelin/contracts/utils/Address.sol";
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/common/ERC2981.sol";     // For royalty support
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol"; // For reentrancy protection
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";    // Новый путь
 import "@openzeppelin/contracts/utils/Multicall.sol";          // For multicall functionality
 
-
 import "./Estonians888Token.sol"; // Import the Estonians888Token contract
+import "./IEstonians888DIDRegistry.sol"; // Добавить этот импорт
 
 /**
  * @title LoveDoPostNFT
@@ -24,7 +24,7 @@ contract LoveDoPostNFT is ERC721, Ownable, ERC2981, ReentrancyGuard, Multicall {
     using Address for address;
 
     Estonians888Token public immutable token; // Token used for superlikes
-    IEstonians888DIDRegistry public profileContract;
+    //IEstonians888DIDRegistry public profileContract;
 
     uint256 public constant SUPERLIKE_LIMIT = 8; // Monthly superlike limit per user
     uint256 public constant RECOMMENDATION_LIMIT = 8; // Maximum recommendations with superlikes per user
@@ -74,10 +74,10 @@ contract LoveDoPostNFT is ERC721, Ownable, ERC2981, ReentrancyGuard, Multicall {
      * @dev Initializes the ERC721 with a name and symbol, and sets the token for superlikes.
      * @param _token Address of the Estonians888Token contract.
      */
-    constructor(Estonians888Token _token, address _profileContract) ERC721("LoveDoPostNFT", "LDP") Ownable(msg.sender) {
+    constructor(Estonians888Token _token) ERC721("LoveDoPostNFT", "LDP") {
         require(address(_token).code.length > 0, "Token address must be a contract.");
         token = _token;
-        profileContract = IEstonians888DIDRegistry(_profileContract);
+        //profileContract = IEstonians888DIDRegistry(_profileContract);
         _setDefaultRoyalty(msg.sender, 888); // Sets default royalty to 8.88%
     }
 
@@ -240,8 +240,12 @@ contract LoveDoPostNFT is ERC721, Ownable, ERC2981, ReentrancyGuard, Multicall {
     * @dev Returns whether `tokenId` exists.
     * Tokens exist if they have an owner.
     */
-    function _exists(uint256 tokenId) internal view returns (bool) {
+    function _exists(uint256 tokenId) internal view override returns (bool) {
         return (ownerOf(tokenId) != address(0));
+    }
+
+    function supportsInterface(bytes4 interfaceId) public view override(ERC721, ERC2981) returns (bool) {
+        return super.supportsInterface(interfaceId);
     }
 
 }
