@@ -80,6 +80,9 @@ contract Estonians888InviteNFT is ERC721Enumerable, Ownable, IERC721Receiver, ER
     uint256 private constant MAX_CALLS_PER_PERIOD = 10;
     uint256 private constant RESET_PERIOD = 1 hours;
 
+    // Префикс для Ethereum Signed Message
+    string constant PREFIX = "\x19Ethereum Signed Message:\n32";
+
     /**
      * @dev Initializes the contract with the name and symbol for the InviteNFT.
      */
@@ -123,7 +126,8 @@ contract Estonians888InviteNFT is ERC721Enumerable, Ownable, IERC721Receiver, ER
             if(!(
                 (char >= 0x30 && char <= 0x39) || // 0-9
                 (char >= 0x41 && char <= 0x5A) || // A-Z
-                (char >= 0x61 && char <= 0x7A)    // a-z
+                (char >= 0x61 && char <= 0x7A) || // a-z
+                char == 0x2D                      // -
             )) return false;
         }
         return true;
@@ -251,16 +255,20 @@ contract Estonians888InviteNFT is ERC721Enumerable, Ownable, IERC721Receiver, ER
     }
 
     /**
-     * @dev Верифицирует кошелек пользователя через подпись
-     * @param wallet Адрес кошелька для верификации
-     * @param signature Подпись сообщения
+     * @dev Верифицирует кошелек через подпись
      */
-    function verifyWallet(address wallet, bytes memory signature) external onlyOwner {
+    function verifyWallet(address wallet, bytes memory signature) external {
         require(!verifiedWallets[wallet], "Wallet already verified");
         require(!usedSignatures[signature], "Signature already used");
 
+        // Формируем сообщение
         bytes32 messageHash = keccak256(abi.encodePacked(VERIFICATION_MESSAGE, wallet));
-        address signer = recoverSigner(messageHash, signature);
+        
+        // Добавляем Ethereum Signed Message префикс
+        bytes32 ethSignedMessageHash = keccak256(abi.encodePacked(PREFIX, messageHash));
+
+        // Восстанавливаем адрес подписавшего
+        address signer = recoverSigner(ethSignedMessageHash, signature);
         require(signer == wallet, "Invalid signature");
 
         verifiedWallets[wallet] = true;
@@ -271,10 +279,8 @@ contract Estonians888InviteNFT is ERC721Enumerable, Ownable, IERC721Receiver, ER
 
     /**
      * @dev Восстанавливает адрес подписавшего из подписи
-     * @param messageHash Хэш подписанного сообщения
-     * @param signature Подпись
      */
-    function recoverSigner(bytes32 messageHash, bytes memory signature) internal pure returns (address) {
+    function recoverSigner(bytes32 ethSignedMessageHash, bytes memory signature) internal pure returns (address) {
         require(signature.length == 65, "Invalid signature length");
 
         bytes32 r;
@@ -287,13 +293,15 @@ contract Estonians888InviteNFT is ERC721Enumerable, Ownable, IERC721Receiver, ER
             v := byte(0, mload(add(signature, 96)))
         }
 
+        // Ethereum использует 27/28 для v
         if (v < 27) {
             v += 27;
         }
 
         require(v == 27 || v == 28, "Invalid signature 'v' value");
 
-        return ecrecover(messageHash, v, r, s);
+        // Восстанавливаем адрес используя уже подготовленный хэш
+        return ecrecover(ethSignedMessageHash, v, r, s);
     }
 
     /**
