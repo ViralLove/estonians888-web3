@@ -1,28 +1,57 @@
 const { ethers } = require("hardhat");
+const dotenv = require('dotenv');
+
+// Загружаем конфигурацию
+dotenv.config();
+dotenv.config({ path: '.env.local' });
 
 async function main() {
+    const network = process.env.NETWORK || 'local';
+    console.log(`\n🌍 Деплой в сеть: ${network}`);
+
     const [deployer] = await ethers.getSigners();
-    
-    // Получаем баланс через provider
-    const balance = await ethers.provider.getBalance(deployer.address);
-    console.log("Развертывание контрактов с аккаунта:", deployer.address);
-    console.log("Баланс аккаунта:", ethers.formatEther(balance), "ETH");
+    console.log("👤 Deploying contracts with account:", deployer.address);
 
-    // Деплой Estonians888InviteNFT
-    const Estonians888InviteNFT = await ethers.getContractFactory("Estonians888InviteNFT");
-    
-    // Кошелек с ненулевым балансом который становится владельцем контракта
-    const estonians888NFTAddress = "0x62836D3c48751940E18Ec199844B4ED408969AE5"; 
-    
-    const estonians888InviteNFT = await Estonians888InviteNFT.deploy(estonians888NFTAddress);
-    await estonians888InviteNFT.waitForDeployment();
+    const balance = await deployer.provider.getBalance(deployer.address);
+    console.log("💰 Account balance:", ethers.formatEther(balance));
 
-    console.log("Estonians888InviteNFT развернут по адресу:", await estonians888InviteNFT.getAddress());
+    // Деплоим контракт
+    const InviteNFT = await ethers.getContractFactory("Estonians888InviteNFT");
+    console.log("\n📄 Deploying Estonians888InviteNFT...");
+    
+    const inviteNFT = await InviteNFT.deploy();
+    await inviteNFT.waitForDeployment();
+    
+    const contractAddress = await inviteNFT.getAddress();
+    console.log("✅ Estonians888InviteNFT deployed to:", contractAddress);
+
+    // Сохраняем адрес в конфигурацию
+    if (network === 'local') {
+        process.env.LOCAL_INVITE_NFT_CONTRACT = contractAddress;
+    } else if (network === 'polygon_amoy') {
+        process.env.POLYGON_INVITE_NFT_CONTRACT = contractAddress;
+    }
+
+    console.log("\n📝 Deployment Summary:");
+    console.log("- Network:", network);
+    console.log("- Contract Address:", contractAddress);
+    console.log("- Deployer Address:", deployer.address);
+    console.log("- Remaining Balance:", ethers.formatEther(await deployer.provider.getBalance(deployer.address)));
+
+    // Верификация параметров
+    console.log("\n🔍 Проверка параметров контракта...");
+    const deployedContract = await ethers.getContractAt("Estonians888InviteNFT", contractAddress);
+    const name = await deployedContract.name();
+    const symbol = await deployedContract.symbol();
+    
+    console.log("- Name:", name);
+    console.log("- Symbol:", symbol);
 }
 
 main()
     .then(() => process.exit(0))
     .catch((error) => {
+        console.error("\n❌ Error during deployment:");
         console.error(error);
         process.exit(1);
     });

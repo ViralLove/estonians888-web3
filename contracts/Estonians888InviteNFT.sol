@@ -6,51 +6,73 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 
-
-interface IEstonians888NFT {
-    function balanceOf(address owner) external view returns (uint256);
-}
-
 /**
  * @title Estonians888InviteNFT
- * @dev This contract manages invitation-only access to the network by issuing invite NFTs.
- * Each InviteNFT includes a unique alpha-numeric code for activation and transfers ownership 
- * upon successful activation to the newly created user address.
+ * @dev A smart contract for managing an invite-only NFT system with the following features:
+ * 
+ * Core Functionality:
+ * - Minting of invite NFTs with unique alpha-numeric codes
+ * - Verification system for wallets through cryptographic signatures
+ * - Email-to-wallet linking mechanism
+ * - Batch creation of new invites (8 per verified wallet)
+ * 
+ * Security Features:
+ * - Rate limiting to prevent abuse
+ * - Signature verification for wallet authentication
+ * - One-time use invite codes
+ * - Protection against duplicate emails and wallets
+ * 
+ * Key Components:
+ * - ERC721 Enumerable and URI Storage support
+ * - Owner-controlled administrative functions
+ * - Event logging for all major operations
+ * - Anti-spam mechanisms
+ * 
+ * Integration:
+ * - Interfaces with Estonians888NFT main contract
+ * - Supports standard ERC721 receiver interface
+ * 
+ * Access Control:
+ * - Owner-restricted administrative functions
+ * - Verified wallet requirements for new invites creation
+ * - Single-use permissions for invite generation
+ * 
+ * @notice This contract serves as the gateway for new members joining the Estonians888 ecosystem
+ * through a controlled invitation system
  */
 contract Estonians888InviteNFT is ERC721Enumerable, Ownable, IERC721Receiver, ERC721URIStorage {
     
-    IEstonians888NFT public immutable estonians888NFT;
-
-    // Mapping to store the alpha-numeric invite code for each tokenId
+    // Mapping in the contract state to store the alpha-numeric invite code for each tokenId
     mapping(uint256 => string) public inviteCodes;
 
-    // Mapping to log which address activated the invite code
+    // Mapping to store the address that activated the invite code
     mapping(string => address) public inviteActivator;
 
     // Links email to invite code
     mapping(bytes32 => string) private hashedEmailToInviteCode;
+    
     // Tracks activation status of invite codes
     mapping(string => bool) public activatedInviteCodes;
 
-    // Event emitted when an invite code is activated
+    // Event emitted when invite code is activated
     event InviteActivated(string inviteCode, bytes32 indexed hashedEmail, address indexed activator);
 
     // Counter for token IDs
     uint256 private tokenIdCounter;
 
-    // Мапинг для отслеживания, использовал ли адрес своё право на минтинг инвайтов
+    // Mapping to track if an address has used its right to mint his own invites
     mapping(address => bool) public hasCreatedInvites;
 
-    // Количество инвайтов, которые можно создать
-    uint256 private constant INVITES_PER_USER = 8;
+    // Number of invites that can be created
+    uint256 private constant INVITES_PER_USER = 3;
 
-    // Добавить в состояние контракта:
+    // Mapping in the contract state to store the existence of invite codes
     mapping(string => bool) public existingInviteCodes;
 
-    // Маппинг для отслеживания верифицированных кошельков
+    // Mapping in the contract state to track verified wallets
     mapping(address => bool) public verifiedWallets;
 
-    // Маппинги для связи email с адресом кошелька
+    // Mapping in the contract state to link email to wallet address
     mapping(string => address) public emailToWallet;
     mapping(address => string) public walletToEmail;
 
@@ -60,34 +82,32 @@ contract Estonians888InviteNFT is ERC721Enumerable, Ownable, IERC721Receiver, ER
     event NFTTransferInitiated(uint256 tokenId, address from, address to);
     event WalletConnected(bytes32 indexed hashedEmail, address indexed wallet, string inviteCode);
 
-    // Добавляем в состояние контракта:
+    // Adding a salt for hashing invite codes in the contract state
     bytes32 private immutable SALT;
     mapping(bytes32 => bool) private hashedInviteCodes;
-    uint256 private constant MIN_INVITE_LENGTH = 8;
-    uint256 private constant MAX_INVITE_LENGTH = 32;
+    uint256 private constant INVITE_LENGTH = 13;
 
-    // Добавляем в состояние контракта:
+    // Adding a verification message to the contract state
     string private constant VERIFICATION_MESSAGE = "Verify wallet for Estonians888InviteNFT";
     mapping(bytes => bool) private usedSignatures;
 
-    // Добавляем маппинги для связей
+    // Adding a mapping for the link between invite codes and wallets
     mapping(string => address) public inviteCodeToWallet;
 
-    // Добавляем в состояние контракта
+    // Adding a mapping in the contract state to track the last call timestamp
     mapping(address => uint256) private lastCallTimestamp;
     mapping(address => uint256) private callCounter;
     uint256 private constant CALL_DELAY = 1 minutes;
     uint256 private constant MAX_CALLS_PER_PERIOD = 10;
     uint256 private constant RESET_PERIOD = 1 hours;
 
-    // Префикс для Ethereum Signed Message
+    // Prefix for Ethereum Signed Message
     string constant PREFIX = "\x19Ethereum Signed Message:\n32";
 
     /**
      * @dev Initializes the contract with the name and symbol for the InviteNFT.
      */
-    constructor(address _estonians888NFT) ERC721("Estonians888InviteNFT", "E888INVITE") {
-        estonians888NFT = IEstonians888NFT(_estonians888NFT);
+    constructor() ERC721("Estonians888InviteNFT", "E888INVITE") {
         SALT = keccak256(abi.encodePacked(block.timestamp, msg.sender));
     }
 
@@ -98,12 +118,11 @@ contract Estonians888InviteNFT is ERC721Enumerable, Ownable, IERC721Receiver, ER
      * @param inviteCode The unique alpha-numeric code associated with this invite NFT.
      */
     function mintInvite(address to, string memory inviteCode, string memory mintTokenURI) external onlyOwner {
-        // Валидация входных данных
-        require(bytes(inviteCode).length >= MIN_INVITE_LENGTH, "Invite code too short");
-        require(bytes(inviteCode).length <= MAX_INVITE_LENGTH, "Invite code too long");
+        // Validation of input data
+        require(bytes(inviteCode).length == INVITE_LENGTH, "Invalid invite code length");
         require(_isValidInviteFormat(inviteCode), "Invalid invite code format");
         
-        // Хэширование с salt
+        // Hashing with salt
         bytes32 hashedCode = keccak256(abi.encodePacked(SALT, inviteCode));
         require(!hashedInviteCodes[hashedCode], "Invite code already exists");
 
@@ -118,7 +137,11 @@ contract Estonians888InviteNFT is ERC721Enumerable, Ownable, IERC721Receiver, ER
         _setTokenURI(tokenId, mintTokenURI);
     }
 
-    // Добавляем вспомогательную функцию для проверки фомата:
+    /**
+     * @dev Validates the format of an invite code
+     * @param code The invite code to validate
+     * @return bool Returns true if the code contains only allowed characters
+     */
     function _isValidInviteFormat(string memory code) private pure returns (bool) {
         bytes memory b = bytes(code);
         for(uint i; i < b.length; i++){
@@ -134,9 +157,9 @@ contract Estonians888InviteNFT is ERC721Enumerable, Ownable, IERC721Receiver, ER
     }
 
     /**
-     * @dev Проверяет Invite-код на валидность.
-     * @param inviteCode Invite-код для проверки.
-     * @return isValid true, если Invite-код существует и ещё не активирован.
+     * @dev Validates the invite code for validity.
+     * @param inviteCode The invite code to validate.
+     * @return isValid true if the invite code exists and is not activated.
      */
     function validateInviteCode(string memory inviteCode) 
         external 
@@ -147,11 +170,11 @@ contract Estonians888InviteNFT is ERC721Enumerable, Ownable, IERC721Receiver, ER
     }
 
     /**
-     * @dev Получает информацию о лимитах вызовов для адреса
-     * @param addr Адрес для проверки
-     * @return remainingCalls Оставшееся количество вызовов
-     * @return nextResetTime Время следующего сброса счетчика
-     * @return canCallAfter ремя, когда можно сделать следующий вызов
+     * @dev Gets the call limit information for an address
+     * @param addr The address to check
+     * @return remainingCalls The remaining number of calls
+     * @return nextResetTime The time of the next reset
+     * @return canCallAfter The time when the next call can be made
      */
     function getRateLimitInfo(address addr) 
         external 
@@ -164,7 +187,7 @@ contract Estonians888InviteNFT is ERC721Enumerable, Ownable, IERC721Receiver, ER
     {
         uint256 lastCall = lastCallTimestamp[addr];
         
-        // Вычисляем оставшиеся вызовы
+        // Calculating the remaining calls
         uint256 remaining = MAX_CALLS_PER_PERIOD - callCounter[addr];
         if (block.timestamp >= lastCall + RESET_PERIOD) {
             remaining = MAX_CALLS_PER_PERIOD;
@@ -178,10 +201,10 @@ contract Estonians888InviteNFT is ERC721Enumerable, Ownable, IERC721Receiver, ER
     }
 
     /**
-     * @dev Проверяет возможность вызова метода для адреса
-     * @param addr Адрес для проверки
-     * @return canCall Возможность вызова
-     * @return waitTime Время ожидания (если canCall = false)
+     * @dev Checks the possibility of calling the method for an address
+     * @param addr The address to check
+     * @return canCall The possibility of calling
+     * @return waitTime The waiting time (if canCall = false)
      */
     function canMakeCall(address addr) 
         external 
@@ -201,33 +224,39 @@ contract Estonians888InviteNFT is ERC721Enumerable, Ownable, IERC721Receiver, ER
     }
 
     /**
-     * @dev Creates multiple invite NFTs for a verified wallet.
-     * @param creator The address that will receive the invite NFTs
-     * @param newInviteCodes Array of invite codes to be created
-     * @notice Each wallet can only create invites once
+     * @dev Creates multiple invite NFTs with associated codes and metadata
+     * @param to Address to receive the NFTs
+     * @param codes Array of invite codes to be associated with the NFTs
+     * @param metadataURIs Array of metadata URIs for the NFTs
+     * @notice Only verified wallets can create invites
+     * @notice Non-owner wallets can only create INVITES_PER_USER invites once
+     * @notice Owner can create unlimited invites multiple times
      */
-    function createInviteNFTs(address creator, string[] memory newInviteCodes) external onlyOwner {
-        require(!hasCreatedInvites[creator], "Already created invites");
-        require(verifiedWallets[creator], "Wallet not verified");
-        require(newInviteCodes.length == INVITES_PER_USER, "Invalid number of invite codes");
-
-        for (uint256 i = 0; i < newInviteCodes.length; i++) {
-            string memory inviteCode = newInviteCodes[i];
-            require(bytes(inviteCode).length >= MIN_INVITE_LENGTH, "Invite code too short");
-            require(bytes(inviteCode).length <= MAX_INVITE_LENGTH, "Invite code too long");
-            require(_isValidInviteFormat(inviteCode), "Invalid invite code format");
-            require(!existingInviteCodes[inviteCode], "Invite code already exists");
-
-            tokenIdCounter++;
-            uint256 tokenId = tokenIdCounter;
-
-            _safeMint(creator, tokenId);
-            inviteCodes[tokenId] = inviteCode;
-            existingInviteCodes[inviteCode] = true;
+    function createInviteNFTs(
+        address to,
+        string[] memory codes,
+        string[] memory metadataURIs
+    ) external {
+        require(verifiedWallets[msg.sender], "Wallet not verified");
+        
+        // Adding a check: if sender is not owner, check limits
+        if (msg.sender != owner()) {
+            require(!hasCreatedInvites[msg.sender], "Already created invites");
+            require(codes.length == INVITES_PER_USER, "Invalid number of invites");
+            hasCreatedInvites[msg.sender] = true;
         }
 
-        hasCreatedInvites[creator] = true;
-        emit InvitesCreated(creator, newInviteCodes);
+        for (uint256 i = 0; i < codes.length; i++) {
+            require(!existingInviteCodes[codes[i]], "Invite code already exists");
+            existingInviteCodes[codes[i]] = true;
+            
+            tokenIdCounter++;
+            _safeMint(to, tokenIdCounter);
+            _setTokenURI(tokenIdCounter, metadataURIs[i]);
+            inviteCodes[tokenIdCounter] = codes[i];
+        }
+
+        emit BatchInvitesCreated(msg.sender, codes);
     }
 
     /**
@@ -255,19 +284,19 @@ contract Estonians888InviteNFT is ERC721Enumerable, Ownable, IERC721Receiver, ER
     }
 
     /**
-     * @dev Верифицирует кошелек через подпись
+     * @dev Verifies a wallet through a signature
      */
     function verifyWallet(address wallet, bytes memory signature) external {
         require(!verifiedWallets[wallet], "Wallet already verified");
         require(!usedSignatures[signature], "Signature already used");
 
-        // Формируем сообщение
+        // Forming a message
         bytes32 messageHash = keccak256(abi.encodePacked(VERIFICATION_MESSAGE, wallet));
         
-        // Добавляем Ethereum Signed Message префикс
+        // Adding the Ethereum Signed Message prefix
         bytes32 ethSignedMessageHash = keccak256(abi.encodePacked(PREFIX, messageHash));
 
-        // Восстанавливаем адрес подписавшего
+        // Recovering the address of the signer
         address signer = recoverSigner(ethSignedMessageHash, signature);
         require(signer == wallet, "Invalid signature");
 
@@ -278,7 +307,7 @@ contract Estonians888InviteNFT is ERC721Enumerable, Ownable, IERC721Receiver, ER
     }
 
     /**
-     * @dev Восстанавливает адрес подписавшего из подписи
+     * @dev Recovers the address of the signer from the signature
      */
     function recoverSigner(bytes32 ethSignedMessageHash, bytes memory signature) internal pure returns (address) {
         require(signature.length == 65, "Invalid signature length");
@@ -293,14 +322,14 @@ contract Estonians888InviteNFT is ERC721Enumerable, Ownable, IERC721Receiver, ER
             v := byte(0, mload(add(signature, 96)))
         }
 
-        // Ethereum использует 27/28 для v
+        // Ethereum uses 27/28 for v
         if (v < 27) {
             v += 27;
         }
 
         require(v == 27 || v == 28, "Invalid signature 'v' value");
 
-        // Восстанавливаем адрес используя уже подготовленный хэш
+        // Recovering the address using the already prepared hash
         return ecrecover(ethSignedMessageHash, v, r, s);
     }
 
@@ -319,14 +348,14 @@ contract Estonians888InviteNFT is ERC721Enumerable, Ownable, IERC721Receiver, ER
         require(bytes(inviteCode).length > 0, "Email not found");
         require(inviteCodeToWallet[inviteCode] == address(0), "Invite code already connected to wallet");
 
-        // Связываем инвайт-код с кошельком
+        // Connecting the invite code to the wallet
         inviteCodeToWallet[inviteCode] = wallet;
         
-        // Связываем email с кошельком
+        // Linking the email to the wallet
         emailToWallet[email] = wallet;
         walletToEmail[wallet] = email;
 
-        // Передаем NFT новому владельцу
+        // Transferring the NFT to the new owner
         uint256 tokenId = getTokenIdByInviteCode(inviteCode);
         address currentOwner = ownerOf(tokenId);
         _transfer(currentOwner, wallet, tokenId);
@@ -378,27 +407,25 @@ contract Estonians888InviteNFT is ERC721Enumerable, Ownable, IERC721Receiver, ER
     }
 
     /**
-     * @dev Centralized issuance of 8 InviteNFTs for a newly registered user with LegalNFT.
-     * @param newOwner The address of the user receiving the 8 InviteNFTs.
-     * @param inviteCodesArray An array of 8 unique invite codes for each InviteNFT.
+     * @dev Issues a batch of 8 invite NFTs to a verified wallet
+     * @param inviteCodesArray Array of 8 unique invite codes
+     * Requirements:
+     * - Caller must be a verified wallet
+     * - Caller must not have created invites before
+     * - All invite codes must be unique and not used
      */
-    function issueBatchInvites(address newOwner, string[8] memory inviteCodesArray) external onlyOwner {
-        require(inviteCodesArray.length == 8, "Must provide exactly 8 invite codes.");
-
-        for (uint256 i = 0; i < 8; i++) {
-            require(!activatedInviteCodes[inviteCodesArray[i]], "One of the invite codes is already used.");
-            
-            tokenIdCounter++;
-            uint256 tokenId = tokenIdCounter;
-
-            _safeMint(newOwner, tokenId);
-            inviteCodes[tokenId] = inviteCodesArray[i];
-            activatedInviteCodes[inviteCodesArray[i]] = false;
-            existingInviteCodes[inviteCodesArray[i]] = true;
+    function issueBatchInvites(string[8] memory inviteCodesArray) external {
+        require(verifiedWallets[msg.sender], "Wallet not verified");
+        require(!hasCreatedInvites[msg.sender], "Already created invites");
+        
+        string[] memory convertedArray = new string[](8);
+        for(uint i = 0; i < 8; i++) {
+            convertedArray[i] = inviteCodesArray[i];
         }
+        emit BatchInvitesCreated(msg.sender, convertedArray);
     }
 
-    // Событи
+    // Event is emitted when invites are created
     event InvitesCreated(address indexed creator, string[] inviteCodes);
 
     function onERC721Received(
@@ -410,7 +437,7 @@ contract Estonians888InviteNFT is ERC721Enumerable, Ownable, IERC721Receiver, ER
         return this.onERC721Received.selector;
     }
 
-    // Переопределение supportsInterface для поддержки всех интерфейсов
+    // Overriding supportsInterface to support all interfaces
     function supportsInterface(bytes4 interfaceId)
         public
         view
@@ -420,7 +447,7 @@ contract Estonians888InviteNFT is ERC721Enumerable, Ownable, IERC721Receiver, ER
         return super.supportsInterface(interfaceId);
     }
 
-    // Переопределение _burn для корректной работы с URI
+    // Overriding _burn to work correctly with URI
     function _burn(uint256 tokenId) 
         internal 
         override(ERC721, ERC721URIStorage) 
@@ -428,7 +455,7 @@ contract Estonians888InviteNFT is ERC721Enumerable, Ownable, IERC721Receiver, ER
         super._burn(tokenId);
     }
 
-    // Переопределение tokenURI для получения метаданных
+    // Overriding tokenURI to get metadata
     function tokenURI(uint256 tokenId)
         public
         view
@@ -438,7 +465,7 @@ contract Estonians888InviteNFT is ERC721Enumerable, Ownable, IERC721Receiver, ER
         return super.tokenURI(tokenId);
     }
 
-    // 1. Добавляем override для _beforeTokenTransfer
+    // Adding override for _beforeTokenTransfer
     function _beforeTokenTransfer(
         address from,
         address to,
@@ -448,7 +475,7 @@ contract Estonians888InviteNFT is ERC721Enumerable, Ownable, IERC721Receiver, ER
         super._beforeTokenTransfer(from, to, firstTokenId, batchSize);
     }
 
-    // Доавляем событие
+    // Adding an event
     event WalletVerified(address indexed wallet);
 
     /**
@@ -470,37 +497,38 @@ contract Estonians888InviteNFT is ERC721Enumerable, Ownable, IERC721Receiver, ER
     }
 
     /**
-     * @dev Модификатор для ограничения частоты вызовов
-     * @param delay Минимальная задержка между вызовами
+     * @dev Modifier to limit the frequency of calls
+     * @param delay The minimum delay between calls
      */
     modifier rateLimiter(uint256 delay) {
         require(block.timestamp >= lastCallTimestamp[msg.sender] + delay, 
             "Please wait before next call");
         
-        // Сброс счетчика, если прошел период сброса
+        // Resetting the counter if the reset period has passed
         if (block.timestamp >= lastCallTimestamp[msg.sender] + RESET_PERIOD) {
             callCounter[msg.sender] = 0;
         }
         
-        // Проверка количества вызовов
+        // Checking the number of calls
         require(callCounter[msg.sender] < MAX_CALLS_PER_PERIOD, 
             "Too many requests in this period");
         
-        // Обновляем счетчики
+        // Updating the counters
         callCounter[msg.sender]++;
         lastCallTimestamp[msg.sender] = block.timestamp;
         _;
     }
 
-    // Функция для получения ETH
+    // Function to receive ETH
     receive() external payable {}
 
-    // Добавьте эту функцию в контракт
-    function isWalletVerified(address wallet) external view returns (bool) {
+    // Adding this function to the contract
+    function isWalletVerified(address wallet) public view returns (bool) {
+        require(wallet != address(0), "Invalid wallet address");
         return verifiedWallets[wallet];
     }
 
-    // Изменяем функцию с internal на public
+    // Changing the function from internal to public
     function getTokenIdByInviteCode(string memory inviteCode) public view returns (uint256) {
         for (uint256 i = 1; i <= tokenIdCounter; i++) {
             if (keccak256(abi.encodePacked(inviteCodes[i])) == keccak256(abi.encodePacked(inviteCode))) {
@@ -509,4 +537,7 @@ contract Estonians888InviteNFT is ERC721Enumerable, Ownable, IERC721Receiver, ER
         }
         return 0;
     }
+
+    // Adding this event declaration together with other events
+    event BatchInvitesCreated(address indexed creator, string[] inviteCodes);
 }
