@@ -18,16 +18,18 @@ const path = require('path');
 const fs = require('fs');
 const hre = require("hardhat");
 
-const INVITES_PER_USER = 1;
+const INVITES_PER_USER = 8;
 const CONTRACT_NAME = "Estonians888InviteNFT";
 
 // Create a global object to store all onboarding data
 const onboardingData = {
-    deployer: null,
-    contract: null,
+    initialSetup: {
+        deployerAddress: null,
+        contractAddress: null
+    },
     rootInvite: {
         code: null,
-        imageUrl: null,
+        imageIpfs: null,
         tokenId: null,
         txHash: null
     },
@@ -35,7 +37,11 @@ const onboardingData = {
         address: null,
         privateKey: null
     },
-    friendInvites: []
+    friendInvites: {
+        codes: [],
+        imageUrls: [],
+        txHashes: []
+    }
 };
 
 // Function for generating an invite code
@@ -235,10 +241,18 @@ async function main() {
         const deployer = new ethers.Wallet(networkConfig.deployerKey, provider);
         console.log("\n👤 Using deployer account:", deployer.address);
 
+        // Wait for the contract to be deployed
+        await new Promise(resolve => setTimeout(resolve, 10000));
+
         // Obtaining the contract
         const InviteNFT = await ethers.getContractFactory(CONTRACT_NAME, deployer);
         const inviteNFTContract = InviteNFT.attach(contractAddress);
         console.log("📄 Connected to contract:", inviteNFTContract.target);
+
+        onboardingData.initialSetup = {
+            deployerAddress: deployer.address,
+            contractAddress: inviteNFTContract.target
+        };
 
         // Updating the verification status of the deployer's wallet
         const isVerified = await inviteNFTContract.isWalletVerified(deployer.address)
@@ -255,7 +269,9 @@ async function main() {
                 }
                 return false;
             });
-
+        
+        // Waiting for the verification
+        await new Promise(resolve => setTimeout(resolve, 10000));
         if (!isVerified) {
                 console.log("\n🔐 Verifying the deployer's wallet...");
             try {
@@ -317,6 +333,9 @@ async function main() {
         // Verifying the new wallet
         await verifyWallet(onboardingWallet, inviteNFTContract);
 
+        // Waiting for the verification
+        await new Promise(resolve => setTimeout(resolve, 10000));
+
         // Getting the current nonce for validating the code
         const validateNonce = await deployer.provider.getTransactionCount(deployer.address, "latest");
         console.log("\n📊 Current deployer nonce for validation:", validateNonce);
@@ -330,7 +349,17 @@ async function main() {
                 gasLimit: ethers.parseUnits("300000", "wei")
             }
         );
-        
+
+        onboardingData.rootInvite = {
+            code: deployerInviteNFTData.inviteCode,
+            imageIpfs: deployerInviteNFTData.metadata.image,
+            txHash: isValid.txHash,
+            tokenId: isValid.tokenId
+        };
+
+        // Waiting for the invite code validation
+        await new Promise(resolve => setTimeout(resolve, 10000));
+
         if (!isValid) throw new Error("This invite code is not available");
         console.log("✅ This invite code is available");
 
@@ -344,10 +373,13 @@ async function main() {
             deployerInviteNFTData.inviteCode, 
             deployerInviteNFTData.email,
             {
-                nonce: deployerNonce + 1,
+                nonce: deployerNonce,
                 gasLimit: ethers.parseUnits("300000", "wei")
             }
         );
+
+        // Waiting for the invite code activation
+        await new Promise(resolve => setTimeout(resolve, 10000));
 
         console.log("📤 Transaction hash:", activateInviteTx.hash);
         await activateInviteTx.wait();
@@ -368,8 +400,17 @@ async function main() {
             }
         );
 
+        // Waiting for the wallet linking
+        await new Promise(resolve => setTimeout(resolve, 10000));
+
         console.log("📤 Transaction hash:", wallet2EmailTxn.hash);
         await wallet2EmailTxn.wait();
+
+        // После создания onboarding wallet
+        onboardingData.onboardingWallet = {
+            address: onboardingWallet.address,
+            privateKey: onboardingWallet.privateKey
+        };
         console.log("✅ The wallet is successfully linked to the invite code");
 
         // Minting INVITES_PER_USER invites for the onboardingWallet that will be given to his friends
@@ -406,15 +447,16 @@ async function main() {
         const invitesNonce = await deployer.provider.getTransactionCount(deployer.address, "latest");
         console.log("\n📊 Current nonce for creating friend invites:", invitesNonce);
         
-        const friendsInvitesMintTxn = await inviteNFTContract.connect(deployer).createInviteNFTs(
-            onboardingWallet.address,
-            friendsInviteCodes,
-            friendsInviteURIs,
-            {
-                nonce: invitesNonce,
-                gasLimit: ethers.parseUnits("1000000", "wei")
-            }
-        );
+        console.log("friendsInviteCodes: ", friendsInviteCodes);
+        const friendsInvitesMintTxn = await createInviteNFTs(inviteNFTContract, onboardingWallet.address, friendsInviteCodes, friendsInviteURIs);
+
+        // Waiting for the friend invites creation
+        await new Promise(resolve => setTimeout(resolve, 10000));
+
+        // After creating friend invites
+        onboardingData.friendInvites.codes = friendsInviteCodes;
+        onboardingData.friendInvites.imageUrls = friendsInviteURIs;
+        onboardingData.friendInvites.txHashes = [friendsInvitesMintTxn.hash];
 
         console.log("📤 Transaction hash:", friendsInvitesMintTxn.hash);
         const receipt = await friendsInvitesMintTxn.wait();
@@ -439,56 +481,28 @@ async function main() {
             console.log("- Gas information not available");
         }
 
-        // After creating the root invite NFT
-        onboardingData.deployer = deployer.address;
-        onboardingData.contract = inviteNFTContract.target;
-        onboardingData.rootInvite = {
-            code: deployerInviteNFTData.inviteCode,
-            imageUrl: deployerInviteNFTData.metadata.image,
-            txHash: friendsInvitesMintTxn.hash,
-            // tokenId will be added later if available
-        };
-
-        // After creating the onboarding wallet
-        onboardingData.onboardingWallet = {
-            address: onboardingWallet.address,
-            privateKey: onboardingWallet.privateKey
-        };
-
-        // After creating friend invites
-        onboardingData.friendInvites = friendsInviteCodes.map((code, index) => ({
-            code: code,
-            imageUrl: JSON.parse(friendsInviteURIs[index]).image,
-            txHash: receipt.hash
-            // tokenId will be added later if available
-        }));
-
         console.log("\n✨ The onboarding process is successfully completed");
 
-        // After successfully creating friend invites
         console.log("\n🔄 Onboarding Flow Summary:");
         console.log("\n1️⃣ Initial Setup:");
-        console.log("- Deployer Address:", onboardingData.deployer);
-        console.log("- Contract Address:", onboardingData.contract);
-        
+        console.log("- Deployer Address:", onboardingData.initialSetup.deployerAddress);
+        console.log("- Contract Address:", onboardingData.initialSetup.contractAddress);
+
         console.log("\n2️⃣ Root Invite NFT:");
         console.log("- Invite Code:", onboardingData.rootInvite.code);
-        console.log("- Image IPFS:", onboardingData.rootInvite.imageUrl);
+        console.log("- Image IPFS:", onboardingData.rootInvite.imageIpfs);
         console.log("- Token ID:", onboardingData.rootInvite.tokenId || "Not available");
         console.log("- TX Hash:", onboardingData.rootInvite.txHash);
 
         console.log("\n3️⃣ Onboarding Wallet:");
         console.log("- Address:", onboardingData.onboardingWallet.address);
         console.log("- Private Key:", onboardingData.onboardingWallet.privateKey);
+
+        console.log("\n4️⃣ Friend Invites:");
+        console.log("- Codes:", onboardingData.friendInvites.codes);
+        console.log("- Image URLs:", onboardingData.friendInvites.imageUrls);
+        console.log("- TX Hashes:", onboardingData.friendInvites.txHashes);
         
-        //console.log("\n4️⃣ Friend Invites:");
-        //onboardingData.friendInvites.forEach((invite, index) => {
-        //    console.log(`\nInvite #${index + 1}:`);
-        //    console.log("- Code:", invite.code);
-        //    console.log("- Image IPFS:", invite.imageUrl);
-        //    console.log("- Token ID:", invite.tokenId || "Not available");
-        //    console.log("- TX Hash:", invite.txHash || receipt.hash);
-        //});
     } catch (error) {
         console.error("\n❌ An error occurred during execution:");
         console.error("Message:", error.message);
@@ -528,7 +542,7 @@ async function createDeployerInviteNFT({ deployer, configObject }) {
     console.log("2. Invite codes:", [inviteNFTData.inviteCode]);
     console.log("3. Metadata string:", metadataString);
     
-    console.log("\n� Contract details:");
+    console.log("\n Contract details:");
     console.log("Contract address:", inviteNFTContract.target);
     console.log("Contract name:", CONTRACT_NAME);
 
@@ -701,6 +715,73 @@ async function verifyWallet(wallet, inviteNFTContract) {
         if (error.data) {
             console.error("Contract error data:", error.data);
         }
+        throw error;
+    }
+}
+
+async function createInviteNFTs(contract, recipientAddress, inviteCodes, metadataURIs) {
+    console.log("\n📦 Creating invite NFTs...");
+    console.log("inviteCodes: ", inviteCodes);
+    
+    try {
+
+        // Оцениваем газ с правильными параметрами
+        const gasEstimate = await contract.createInviteNFTs.estimateGas(
+            recipientAddress,
+            inviteCodes,
+            metadataURIs,
+            {
+                from: await contract.runner.getAddress()
+            }
+        );
+
+        // Преобразуем в BigInt и добавляем 30% запаса
+        const gasLimit = (BigInt(gasEstimate) * BigInt(130)) / BigInt(100);
+        
+        // Creating invite NFTs
+        const tx = await contract.createInviteNFTs(
+            recipientAddress,
+            inviteCodes,    // Already an array
+            metadataURIs,   // Array of metadata
+            {
+                gasLimit: gasLimit,
+                maxFeePerGas: ethers.parseUnits("50", "gwei"),
+                maxPriorityFeePerGas: ethers.parseUnits("2", "gwei")
+            }
+        );
+        
+        console.log(`📤 Txn sent: ${tx.hash}`);
+        
+        // Waiting for the transaction confirmation
+        const receipt = await tx.provider.waitForTransaction(tx.hash);
+        
+        // Getting gas information
+        if (receipt) {
+            console.log("\n💰 Transaction information:");
+            console.log("- Hash:", receipt.hash);
+            
+            if (receipt.gasUsed) {
+                console.log("- Gas used:", receipt.gasUsed.toString(), "units");
+                
+                if (receipt.effectiveGasPrice) {
+                    const gasPrice = BigInt(receipt.effectiveGasPrice);
+                    const gasUsed = BigInt(receipt.gasUsed);
+                    const totalCost = gasUsed * gasPrice;
+                    
+                    console.log("- Gas price:", ethers.formatUnits(gasPrice, "gwei"), "gwei");
+                    console.log("- Total cost:", ethers.formatEther(totalCost), "ETH");
+                }
+            }
+        }
+
+        console.log(`✅ NFTs created successfully`);
+        
+        return {
+            txHash: tx.hash,
+            success: true
+        };
+    } catch (error) {
+        console.error(`❌ Error creating NFTs:`, error.message);
         throw error;
     }
 }
