@@ -18,7 +18,7 @@ const path = require('path');
 const fs = require('fs');
 const hre = require("hardhat");
 
-const INVITES_PER_USER = 8;
+const INVITES_PER_USER = 1;
 const CONTRACT_NAME = "Estonians888InviteNFT";
 
 // Create a global object to store all onboarding data
@@ -263,14 +263,15 @@ async function main() {
                 deployer: deployer,
                 configObject: networkConfig
             });
+            deployerInviteNFTData.inviteNFTAddress = inviteNFTContract.inviteNFTAddress;
             allInvites.push(deployerInviteNFTData);
         }
 
         // Выводим CSV заголовок и данные
         console.log("\n📋 CSV format for all minted invites:");
-        console.log("Invite Code,Image URL");
+        console.log("Invite Code,Image URL, Invite NFT Address");
         allInvites.forEach(invite => {
-            console.log(`${invite.inviteCode},${invite.metadata.image}`);
+            console.log(`${invite.inviteCode},${invite.metadata.image},${invite.inviteNFTAddress}`);
         });
     } catch (error) {
         console.error("❌ Error in main:", error);
@@ -301,6 +302,8 @@ async function createDeployerInviteNFT({ deployer, configObject }) {
     console.log("1. Recipient address:", deployer.address);
     console.log("2. Invite codes:", [inviteNFTData.inviteCode]);
     console.log("3. Metadata string:", metadataString);
+    console.log("4. Invite NFT address:", inviteNFTContract.target);
+    inviteNFTData.inviteNFTAddress = inviteNFTContract.target;
     
     console.log("\nContract details:");
     console.log("Contract address:", inviteNFTContract.target);
