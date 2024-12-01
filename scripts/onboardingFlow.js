@@ -459,7 +459,7 @@ async function main() {
         onboardingData.friendInvites.txHashes = [friendsInvitesMintTxn.hash];
 
         console.log("📤 Transaction hash:", friendsInvitesMintTxn.hash);
-        const receipt = await friendsInvitesMintTxn.wait();
+        const receipt = friendsInvitesMintTxn.receipt;
         console.log("\n✅ Friend invites created successfully:");
         console.log("- TX Hash:", receipt.hash);
         
@@ -751,7 +751,9 @@ async function createInviteNFTs(contract, recipientAddress, inviteCodes, metadat
         );
         
         console.log(`📤 Txn sent: ${tx.hash}`);
-        
+
+        // Waiting for the transaction confirmation
+        await new Promise(resolve => setTimeout(resolve, 10000));
         // Waiting for the transaction confirmation
         const receipt = await tx.provider.waitForTransaction(tx.hash);
         
@@ -775,11 +777,13 @@ async function createInviteNFTs(contract, recipientAddress, inviteCodes, metadat
         }
 
         console.log(`✅ NFTs created successfully`);
-        
+
         return {
             txHash: tx.hash,
+            receipt: receipt,
             success: true
         };
+
     } catch (error) {
         console.error(`❌ Error creating NFTs:`, error.message);
         throw error;

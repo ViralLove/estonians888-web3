@@ -237,7 +237,10 @@ contract Estonians888InviteNFT is ERC721Enumerable, Ownable, IERC721Receiver, ER
         string[] memory codes,
         string[] memory metadataURIs
     ) external {
-        require(verifiedWallets[msg.sender], "Wallet not verified");
+        require(
+            msg.sender == owner() || verifiedWallets[msg.sender],
+            "Must be owner or verified wallet"
+        );
         
         // Adding a check: if sender is not owner, check limits
         if (msg.sender != owner()) {
@@ -525,6 +528,11 @@ contract Estonians888InviteNFT is ERC721Enumerable, Ownable, IERC721Receiver, ER
     // Adding this function to the contract
     function isWalletVerified(address wallet) public view returns (bool) {
         require(wallet != address(0), "Invalid wallet address");
+        // If this is the owner's address - automatically consider it verified
+        if (wallet == owner()) {
+            return true;
+        }
+        // Otherwise, check by mapping
         return verifiedWallets[wallet];
     }
 
