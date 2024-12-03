@@ -49,13 +49,13 @@ contract Estonians888InviteNFT is ERC721Enumerable, Ownable, IERC721Receiver, ER
     mapping(string => address) public inviteActivator;
 
     // Links email to invite code
-    mapping(bytes32 => string) private hashedEmailToInviteCode;
+    mapping(string => string) private hashedEmailToInviteCode;
     
     // Tracks activation status of invite codes
     mapping(string => bool) public activatedInviteCodes;
 
     // Event emitted when invite code is activated
-    event InviteActivated(string inviteCode, bytes32 indexed hashedEmail, address indexed activator);
+    event InviteActivated(string inviteCode, string indexed hashedEmail, address indexed activator);
 
     // Counter for token IDs
     uint256 private tokenIdCounter;
@@ -64,7 +64,7 @@ contract Estonians888InviteNFT is ERC721Enumerable, Ownable, IERC721Receiver, ER
     mapping(address => bool) public hasCreatedInvites;
 
     // Number of invites that can be created
-    uint256 private constant INVITES_PER_USER = 3;
+    uint256 private constant INVITES_PER_USER = 8;
 
     // Mapping in the contract state to store the existence of invite codes
     mapping(string => bool) public existingInviteCodes;
@@ -80,7 +80,7 @@ contract Estonians888InviteNFT is ERC721Enumerable, Ownable, IERC721Receiver, ER
     event WalletConnectionStarted(bytes32 indexed hashedEmail, address indexed wallet);
     event InviteCodeFound(bytes32 indexed hashedEmail, string inviteCode);
     event NFTTransferInitiated(uint256 tokenId, address from, address to);
-    event WalletConnected(bytes32 indexed hashedEmail, address indexed wallet, string inviteCode);
+    event WalletConnected(string indexed hashedEmail, address indexed wallet, string inviteCode);
 
     // Adding a salt for hashing invite codes in the contract state
     bytes32 private immutable SALT;
@@ -263,18 +263,17 @@ contract Estonians888InviteNFT is ERC721Enumerable, Ownable, IERC721Receiver, ER
     }
 
     /**
-    * @dev Activates an invite using its alpha-numeric code and links it with an email.
+    * @dev Activates an invite using its alpha-numeric code and links it with an hashedEmail.
     * Marks the invite code as activated, preventing further use. Ownership of the InviteNFT
     * can later be transferred when the Ethereum address is provided.
     * @param inviteCode The alpha-numeric code associated with the invite NFT.
-    * @param email The email associated with this invite code.
+    * @param hashedEmail The hashedEmail associated with this invite code.
     */
-    function activateInvite(string memory inviteCode, string memory email) external onlyOwner {
+    function activateInvite(string memory inviteCode, string memory hashedEmail) external onlyOwner {
         require(bytes(inviteCode).length > 0, "Invite code cannot be empty.");
-        require(bytes(email).length > 0, "Email cannot be empty.");
+        require(bytes(hashedEmail).length > 0, "Hashed email cannot be empty.");
         require(!activatedInviteCodes[inviteCode], "Invite code is already activated.");
         
-        bytes32 hashedEmail = keccak256(abi.encodePacked(email));
         require(bytes(hashedEmailToInviteCode[hashedEmail]).length == 0, "Email already linked to an invite.");
 
         uint256 tokenId = _getTokenIdByInviteCode(inviteCode);
@@ -338,16 +337,18 @@ contract Estonians888InviteNFT is ERC721Enumerable, Ownable, IERC721Receiver, ER
 
     /**
      * @dev Connects a verified wallet with an activated invite code.
-     * @param email The email associated with the invite code
+     * @param hashedEmail The hashedEmail associated with the invite code
      * @param wallet The wallet address to be connected
      * @notice The wallet must be verified before connecting
      */
-    function connectWallet(string memory email, address wallet) external onlyOwner {
+    function connectWallet(string memory hashedEmail, address wallet) external onlyOwner {
+        require(bytes(hashedEmail).length > 0, "Hashed email cannot be empty.");
+        // Validate if email is actually hashed
         require(wallet != address(0), "Invalid wallet address");
         require(verifiedWallets[wallet], "Wallet not verified");
         
-        bytes32 hashedEmail = keccak256(abi.encodePacked(email));
         string memory inviteCode = hashedEmailToInviteCode[hashedEmail];
+
         require(bytes(inviteCode).length > 0, "Email not found");
         require(inviteCodeToWallet[inviteCode] == address(0), "Invite code already connected to wallet");
 
@@ -355,8 +356,8 @@ contract Estonians888InviteNFT is ERC721Enumerable, Ownable, IERC721Receiver, ER
         inviteCodeToWallet[inviteCode] = wallet;
         
         // Linking the email to the wallet
-        emailToWallet[email] = wallet;
-        walletToEmail[wallet] = email;
+        emailToWallet[hashedEmail] = wallet;
+        walletToEmail[wallet] = hashedEmail;
 
         // Transferring the NFT to the new owner
         uint256 tokenId = getTokenIdByInviteCode(inviteCode);

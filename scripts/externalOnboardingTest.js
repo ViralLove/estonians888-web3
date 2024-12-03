@@ -154,8 +154,8 @@ function createNFTMetadata(inviteCode, pinataImageUrl) {
 }
 
 /**
- * Получает конфигурацию сети на основе переменных окружения
- * @returns {Object} Объект с конфигурацией выбранной сети
+ * Obtaining the network configuration based on environment variables
+ * @returns {Object} Object with the selected network configuration
  */
 function getNetworkConfig() {
     const network = process.env.NETWORK || 'local';
@@ -448,7 +448,7 @@ async function generateInviteNFTData() {
 
 
 async function verifyWallet(wallet, inviteNFTContract) {
-    console.log("\n🔐 Verifying the new wallet");
+    console.log("\n🔐 Verifying the wallet: ", wallet.address);
     
     try {
 
@@ -472,6 +472,7 @@ async function verifyWallet(wallet, inviteNFTContract) {
         console.log("📝 Verification details:");
         console.log("- Original message:", message);
         console.log("- Address:", wallet.address);
+        console.log("- Address balance:", ethers.formatEther(await wallet.provider.getBalance(wallet.address)));
         console.log("- Message hash:", messageHash);
         console.log("- Signature:", signature);
 
@@ -483,7 +484,7 @@ async function verifyWallet(wallet, inviteNFTContract) {
                 nonce: expectedNonce,
                 gasLimit: ethers.parseUnits("300000", "wei"),
                 maxFeePerGas: ethers.parseUnits("50", "gwei"),
-                maxPriorityFeePerGas: ethers.parseUnits("1", "gwei")
+                maxPriorityFeePerGas: ethers.parseUnits("25", "gwei")
             }
         );
         

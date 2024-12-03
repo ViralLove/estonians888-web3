@@ -581,6 +581,10 @@ async function generateInviteNFTData() {
     // Generate an email
     const email = "estonian888" + Math.ceil(Date.now() / 8) + "@estonians888.io";
     console.log("📧 Generated email:", email);
+
+    // Hash email so that it would be passed to the contract safely
+    const hashedEmail = keccak256(email);
+    console.log("🔑 Hashed email:", hashedEmail);
     
     // Creating an image
     let imagePath;
@@ -629,6 +633,11 @@ async function generateInviteNFTData() {
     const metadata = createNFTMetadata(inviteCode, ipfsUrl);
 
     return { inviteCode, email, metadata };
+}
+
+async function keccak256(email) {
+    const hashedEmail = ethers.keccak256(ethers.toUtf8Bytes(email));
+    return hashedEmail;
 }
 
 async function generateTestWallet(deployer) {
